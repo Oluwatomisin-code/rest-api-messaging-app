@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Socket Test</title>
+    <script src="/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .message-box {
+            border: 1px solid #ccc;
+            padding: 10px;
+            height: 300px;
+            overflow-y: auto;
+        }
+        .input-box {
+            margin-top: 10px;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 5px;
+        }
+        .sent {
+            background-color: #e3f2fd;
+            margin-left: 20%;
+        }
+        .received {
+            background-color: #f5f5f5;
+            margin-right: 20%;
+        }
+        .system {
+            background-color: #e8f5e9;
+            text-align: center;
+            color: #2e7d32;
+        }
+        .error {
+            background-color: #ffebee;
+            text-align: center;
+            color: #c62828;
+        }
+        .connection-status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .connected {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+        }
+        .disconnected {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+        .connecting {
+            background-color: #fff3e0;
+            color: #ef6c00;
+        }
+        .user-info {
+            background-color: #e3f2fd;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .instructions {
+            background-color: #fff3e0;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 0.9em;
+        }
+        .group-list {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        .group-item {
+            padding: 5px;
+            margin: 5px 0;
+            border: 1px solid #eee;
+            border-radius: 3px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .group-actions {
+            display: flex;
+            gap: 5px;
+        }
+        .group-form {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        .form-group {
+            margin-bottom: 10px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Socket Test</h1>
+    <div>
+        <input type="text" id="token" placeholder="Enter JWT token" style="width: 300px;">
+        <button id="connectBtn">Connect</button>
+        <button id="disconnectBtn">Disconnect</button>
+    </div>
+    <div id="connectionStatus" class="connection-status disconnected">Disconnected</div>
+    <div id="userInfo" class="user-info" style="display: none;">
+        <strong>Your User ID:</strong> <span id="userId"></span>
+    </div>
+    <div class="instructions">
+        <p><strong>How to test messaging:</strong></p>
+        <ol>
+            <li>Open this page in two different browser windows</li>
+            <li>Connect both windows with different user accounts</li>
+            <li>Copy the User ID from one window</li>
+            <li>Paste it as the Recipient ID in the other window</li>
+            <li>Send messages between the windows</li>
+        </ol>
+    </div>
+    <div class="container">
+        <div>
+            <h3>Direct Messages</h3>
+            <div id="directMessages" class="message-box"></div>
+            <div class="input-box">
+                <input type="text" id="recipientId" placeholder="Recipient ID">
+                <input type="text" id="directMessage" placeholder="Type a message">
+                <button id="sendDirectBtn">Send</button>
+            </div>
+        </div>
+        <div>
+            <h3>Groups</h3>
+            <div class="group-form">
+                <h4>Create New Group</h4>
+                <div class="form-group">
+                    <label for="groupName">Group Name:</label>
+                    <input type="text" id="groupName" placeholder="Enter group name">
+                </div>
+                <div class="form-group">
+                    <label for="groupDescription">Description:</label>
+                    <input type="text" id="groupDescription" placeholder="Enter group description">
+                </div>
+                <button id="createGroupBtn">Create Group</button>
+            </div>
+
+            <div class="group-form">
+                <h4>Join Group</h4>
+                <div class="form-group">
+                    <label for="joinGroupId">Group ID:</label>
+                    <input type="text" id="joinGroupId" placeholder="Enter group ID">
+                </div>
+                <button id="joinGroupBtn">Join Group</button>
+            </div>
+
+            <h4>Your Groups</h4>
+            <div id="groupList" class="group-list"></div>
+
+            <h4>Group Messages</h4>
+            <div id="groupMessages" class="message-box"></div>
+            <div class="input-box">
+                <select id="selectedGroup" style="width: 100%; margin-bottom: 5px;">
+                    <option value="">Select a group</option>
+                </select>
+                <input type="text" id="groupMessage" placeholder="Type a message">
+                <button id="sendGroupBtn">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script nonce="socket-test">
+        let socket;
+        let currentUserGroups = [];
+
+        function updateConnectionStatus(status, message) {
+            const statusDiv = document.getElementById('connectionStatus');
+            statusDiv.className = `connection-status ${status}`;
+            statusDiv.textContent = message;
+        }
+
+        async function fetchUserGroups() {
+            try {
+                const token = document.getElementById('token').value;
+                if (!token) {
+                    throw new Error('No token provided');
+                }
+
+                const response = await fetch('/api/user/groups', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.message || 'Failed to fetch groups');
+                }
+
+                currentUserGroups = data;
+                updateGroupList();
+                updateGroupSelect();
+            } catch (error) {
+                console.error('Error fetching groups:', error);
+                addMessage('Error', `Failed to fetch groups: ${error.message}`, 'direct');
+            }
+        }
+
+        function updateGroupList() {
+            const groupList = document.getElementById('groupList');
+            groupList.innerHTML = '';
+            
+            currentUserGroups.forEach(group => {
+                const div = document.createElement('div');
+                div.className = 'group-item';
+                div.innerHTML = `
+                    <div>
+                        <strong>${group.name}</strong>
+                        <div>${group.description}</div>
+                        <small>ID: ${group._id}</small>
+                    </div>
+                    <div class="group-actions">
+                        <button onclick="leaveGroup('${group._id}')">Leave</button>
+                    </div>
+                `;
+                groupList.appendChild(div);
+            });
+        }
+
+        function updateGroupSelect() {
+            const select = document.getElementById('selectedGroup');
+            select.innerHTML = '<option value="">Select a group</option>';
+            
+            currentUserGroups.forEach(group => {
+                const option = document.createElement('option');
+                option.value = group._id;
+                option.textContent = group.name;
+                select.appendChild(option);
+            });
+        }
+
+        async function createGroup() {
+            const name = document.getElementById('groupName').value;
+            const description = document.getElementById('groupDescription').value;
+            const token = document.getElementById('token').value;
+            
+            if (!token) {
+                addMessage('Error', 'No token provided', 'direct');
+                return;
+            }
+            
+            if (!name || !description) {
+                addMessage('Error', 'Please enter both name and description', 'direct');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/user/groups', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ name, description })
+                });
+
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.message || 'Failed to create group');
+                }
+                
+                await fetchUserGroups();
+                document.getElementById('groupName').value = '';
+                document.getElementById('groupDescription').value = '';
+                addMessage('System', `Group "${name}" created successfully`, 'direct');
+            } catch (error) {
+                console.error('Error creating group:', error);
+                addMessage('Error', `Failed to create group: ${error.message}`, 'direct');
+            }
+        }
+
+        async function joinGroup() {
+            const groupId = document.getElementById('joinGroupId').value;
+            const token = document.getElementById('token').value;
+            
+            if (!token) {
+                addMessage('Error', 'No token provided', 'direct');
+                return;
+            }
+            
+            if (!groupId) {
+                addMessage('Error', 'Please enter a group ID', 'direct');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/user/groups/${groupId}/join`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.message || 'Failed to join group');
+                }
+                
+                await fetchUserGroups();
+                document.getElementById('joinGroupId').value = '';
+                addMessage('System', 'Successfully joined group', 'direct');
+            } catch (error) {
+                console.error('Error joining group:', error);
+                addMessage('Error', `Failed to join group: ${error.message}`, 'direct');
+            }
+        }
+
+        async function leaveGroup(groupId) {
+            const token = document.getElementById('token').value;
+            
+            if (!token) {
+                addMessage('Error', 'No token provided', 'direct');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/user/groups/${groupId}/leave`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.message || 'Failed to leave group');
+                }
+                
+                await fetchUserGroups();
+                addMessage('System', 'Successfully left group', 'direct');
+            } catch (error) {
+                console.error('Error leaving group:', error);
+                addMessage('Error', `Failed to leave group: ${error.message}`, 'direct');
+            }
+        }
+
+        function connect() {
+            const token = document.getElementById('token').value;
+            if (!token) {
+                alert('Please enter a JWT token');
+                return;
+            }
+
+            updateConnectionStatus('connecting', 'Connecting...');
+
+            socket = io('http://localhost:8000', {
+                auth: {
+                    token: token
+                }
+            });
+
+            socket.on('connect', () => {
+                console.log('Connected to socket server');
+                updateConnectionStatus('connected', 'Connected to server');
+                addMessage('System', 'Connected to server', 'direct');
+                
+                // Decode JWT token to get user ID
+                try {
+                    const tokenParts = token.split('.');
+                    const payload = JSON.parse(atob(tokenParts[1]));
+                    document.getElementById('userId').textContent = payload.id;
+                    document.getElementById('userInfo').style.display = 'block';
+                    
+                    // Fetch user's groups after connecting
+                    fetchUserGroups();
+                } catch (error) {
+                    console.error('Error decoding token:', error);
+                }
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error('Connection error:', error);
+                updateConnectionStatus('disconnected', `Connection failed: ${error.message}`);
+                addMessage('Error', `Connection failed: ${error.message}`, 'direct');
+            });
+
+            socket.on('new-message', (message) => {
+                addMessage('Received', message.content, 'direct');
+            });
+
+            socket.on('new-group-message', (message) => {
+                addMessage('Group', message, 'group');
+            });
+
+            socket.on('disconnect', (reason) => {
+                console.log('Disconnected from socket server:', reason);
+                updateConnectionStatus('disconnected', `Disconnected: ${reason}`);
+                addMessage('System', `Disconnected: ${reason}`, 'direct');
+            });
+
+            socket.on('error', (error) => {
+                console.error('Socket error:', error);
+                updateConnectionStatus('disconnected', `Error: ${error.message}`);
+                addMessage('Error', error.message, 'direct');
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                updateConnectionStatus('disconnected', 'Disconnected');
+            }
+        }
+
+        function sendDirectMessage() {
+            const recipientId = document.getElementById('recipientId').value;
+            const content = document.getElementById('directMessage').value;
+            
+            if (!recipientId || !content) {
+                alert('Please enter both recipient ID and message');
+                return;
+            }
+
+            if (!socket?.connected) {
+                alert('Not connected to server');
+                return;
+            }
+
+            socket.emit('direct-message', {
+                recipientId,
+                content
+            });
+
+            addMessage('Sent', content, 'direct');
+            document.getElementById('directMessage').value = '';
+        }
+
+        function sendGroupMessage() {
+            const groupId = document.getElementById('selectedGroup').value;
+            const content = document.getElementById('groupMessage').value;
+            
+            if (!groupId || !content) {
+                alert('Please select a group and enter a message');
+                return;
+            }
+
+            if (!socket?.connected) {
+                alert('Not connected to server');
+                return;
+            }
+
+            socket.emit('group-message', {
+                groupId,
+                content
+            });
+
+            addMessage('Sent', content, 'group');
+            document.getElementById('groupMessage').value = '';
+        }
+
+        function addMessage(type, content, messageType) {
+            const div = document.createElement('div');
+            div.className = `message ${type.toLowerCase()}`;
+            
+            if (messageType === 'group' && type === 'Group') {
+                // For received group messages, show sender name
+                const sender = content.sender;
+                let displayName = 'Unknown User';
+                
+                if (sender) {
+                    // Try to use firstName + lastName, fallback to name, then email
+                    if (sender.firstName && sender.lastName) {
+                        displayName = `${sender.firstName} ${sender.lastName}`;
+                    } else if (sender.name) {
+                        displayName = sender.name;
+                    } else if (sender.email) {
+                        displayName = sender.email.split('@')[0]; // Show username part of email
+                    }
+                }
+                
+                div.innerHTML = `<strong>${displayName}:</strong> ${content.content}`;
+            } else {
+                // For direct messages and sent messages
+                div.textContent = `${type}: ${content}`;
+            }
+            
+            const container = messageType === 'direct' ? 
+                document.getElementById('directMessages') : 
+                document.getElementById('groupMessages');
+            
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Add event listeners when the DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('connectBtn').addEventListener('click', connect);
+            document.getElementById('disconnectBtn').addEventListener('click', disconnect);
+            document.getElementById('sendDirectBtn').addEventListener('click', sendDirectMessage);
+            document.getElementById('sendGroupBtn').addEventListener('click', sendGroupMessage);
+            document.getElementById('createGroupBtn').addEventListener('click', createGroup);
+            document.getElementById('joinGroupBtn').addEventListener('click', joinGroup);
+        });
+    </script>
+</body>
+</html> 
