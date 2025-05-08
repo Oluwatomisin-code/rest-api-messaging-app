@@ -1,0 +1,24 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const auth_1 = require("../middlewares/auth");
+const rateLimiter_1 = require("../middlewares/rateLimiter");
+const validate_1 = require("../middlewares/validate");
+const user_controller_1 = require("../controllers/user.controller");
+const user_dto_1 = require("../dtos/user.dto");
+const router = (0, express_1.Router)();
+const userController = new user_controller_1.UserController();
+router.post("/auth/register", rateLimiter_1.authLimiter, (0, validate_1.validateDto)(user_dto_1.RegisterUserDto), userController.register.bind(userController));
+router.post("/auth/login", rateLimiter_1.authLimiter, (0, validate_1.validateDto)(user_dto_1.LoginUserDto), userController.login.bind(userController));
+router.post("/auth/verify-email", rateLimiter_1.authLimiter, (0, validate_1.validateDto)(user_dto_1.VerifyEmailDto), userController.verifyEmail.bind(userController));
+router.post("/auth/resend-verification", rateLimiter_1.authLimiter, userController.resendVerification.bind(userController));
+router.post("/messages", auth_1.authenticate, (0, auth_1.requireRole)(["user"]), rateLimiter_1.apiLimiter, (0, validate_1.validateDto)(user_dto_1.CreateMessageDto), userController.createMessage.bind(userController));
+router.get("/messages", auth_1.authenticate, (0, auth_1.requireRole)(["user"]), rateLimiter_1.apiLimiter, userController.getMessages.bind(userController));
+router.get("/messages/:messageId", auth_1.authenticate, (0, auth_1.requireRole)(["user"]), rateLimiter_1.apiLimiter, userController.getMessage.bind(userController));
+router.delete("/messages/:messageId", auth_1.authenticate, (0, auth_1.requireRole)(["user"]), rateLimiter_1.apiLimiter, userController.deleteMessage.bind(userController));
+router.get("/groups", auth_1.authenticate, (0, auth_1.requireRole)(["user"]), rateLimiter_1.apiLimiter, userController.getGroups.bind(userController));
+router.post("/groups", auth_1.authenticate, (0, auth_1.requireRole)(["user"]), rateLimiter_1.apiLimiter, (0, validate_1.validateDto)(user_dto_1.CreateGroupDto), userController.createGroup.bind(userController));
+router.post("/groups/:groupId/join", auth_1.authenticate, (0, auth_1.requireRole)(["user"]), rateLimiter_1.apiLimiter, userController.joinGroup.bind(userController));
+router.post("/groups/:groupId/leave", auth_1.authenticate, (0, auth_1.requireRole)(["user"]), rateLimiter_1.apiLimiter, userController.leaveGroup.bind(userController));
+exports.default = router;
+//# sourceMappingURL=user.routes.js.map
